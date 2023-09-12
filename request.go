@@ -1693,6 +1693,88 @@ func (r *Request) WithJSON(object interface{}) *Request {
 	return r
 }
 
+// 支持直接输入json格式数据
+// WithJSON sets Content-Type header to "application/json; charset=utf-8"
+// and sets body to object, marshaled using json.Marshal().
+//
+// Example:
+//
+//	MyJSON := `{
+//		"id":"01-test",
+//		"description":"test template",
+//		"placement_policy":{
+//			"affinity":"user_migratable",
+//			"placement_type":"any_host"
+//		},
+//		"template":{
+//			"name":"template-z4vs4",
+//			"vm_numbers":1
+//		}
+//	}`
+//
+//	req := NewRequestC(config, "PUT", "http://example.com/path")
+//	req.WithJSON(MyJSON{Foo: 123})
+//
+//	req := NewRequestC(config, "PUT", "http://example.com/path")
+//	req.WithJSON(map[string]interface{}{"foo": 123})
+func (r *Request) WithJSON2(object interface{}) *Request {
+	opChain := r.chain.enter("WithJSON()")
+	defer opChain.leave()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if opChain.failed() {
+		return r
+	}
+
+	if !r.checkOrder(opChain, "WithJSON()") {
+		return r
+	}
+
+	m, err := jsonToMap(object.(string))
+	if err != nil {
+		opChain.fail(AssertionFailure{
+			Type:   AssertValid,
+			Actual: &AssertionValue{object},
+			Errors: []error{
+				errors.New("invalid json object"),
+				err,
+			},
+		})
+		return r
+	}
+
+	b, err := json.MarshalIndent(m, "", " ")
+	if err != nil {
+		opChain.fail(AssertionFailure{
+			Type:   AssertValid,
+			Actual: &AssertionValue{object},
+			Errors: []error{
+				errors.New("invalid json object"),
+				err,
+			},
+		})
+		return r
+	}
+
+	r.setType(opChain, "WithJSON()", "application/json; charset=utf-8", false)
+	r.setBody(opChain, "WithJSON()", bytes.NewReader(b), len(b), false)
+
+	return r
+}
+
+func jsonToMap(jsonStr string) (map[string]interface{}, error) {
+	m := make(map[string]interface{})
+	err := json.Unmarshal([]byte(jsonStr), &m)
+	if err != nil {
+		fmt.Printf("Unmarshal with error: %+v\n", err)
+		return nil, err
+	}
+
+	return m, nil
+}
+
 // WithForm sets Content-Type header to "application/x-www-form-urlencoded"
 // or (if WithMultipart() was called) "multipart/form-data", converts given
 // object to url.Values using github.com/ajg/form, and adds it to request body.
